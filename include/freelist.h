@@ -23,7 +23,7 @@ struct atomic_node
 
 static_assert(sizeof(flist_node) == sizeof(atomic_node));
 
-#define CAST_TO_ATOMIC_NODE(node) ((struct atomic_node *)(node))
+#define CAST_TO_ATOMIC_NODE(node) ((struct atomic_node *) (node))
 
 /*
  * Head of a free list.
@@ -35,42 +35,57 @@ typedef struct flist_head
 
 /* free list implementation */
 
-static inline bool swing_head(flist_head *head, flist_node *prev_head, flist_node *new_head)
+static inline bool
+swing_head(flist_head *head, flist_node *prev_head, flist_node *new_head)
 {
-	return atomic_compare_exchange_strong(&CAST_TO_ATOMIC_NODE(&head->head)->next, &prev_head, new_head);
+	return atomic_compare_exchange_strong(&CAST_TO_ATOMIC_NODE(&head->head)->next, &prev_head,
+										  new_head);
 }
 
-static inline flist_node *flist_read_head(flist_head *head)
+
+static inline flist_node *
+flist_read_head(flist_head *head)
 {
 	return atomic_load(&CAST_TO_ATOMIC_NODE(&head->head)->next);
 }
+
 
 /*
  * Initialize a singly linked list.
  * Previous state will be thrown away without any cleanup.
  */
-static inline void flist_init(flist_head *head) { atomic_init(&CAST_TO_ATOMIC_NODE(&head->head)->next, NULL); }
+static inline void
+flist_init(flist_head *head)
+{
+	atomic_init(&CAST_TO_ATOMIC_NODE(&head->head)->next, NULL);
+}
+
 
 /*
  * Is the list empty?
  */
-static inline bool flist_is_empty(flist_head *head)
+static inline bool
+flist_is_empty(flist_head *head)
 {
 	return flist_read_head(head) == NULL;
 }
 
+
 /*
  * Insert a node at the beginning of the list.
  */
-static inline void flist_push_head(flist_head *head, flist_node *node)
+static inline void
+flist_push_head(flist_head *head, flist_node *node)
 {
-	do
-	{
+	do {
 		flist_node *prev_head = flist_read_head(head);
 
 		if (swing_head(head, prev_head, node))
+		{
 			break;
+		}
 	} while (1);
 }
+
 
 #endif /* FREELIST_H */

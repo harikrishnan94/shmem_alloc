@@ -16,7 +16,7 @@
  *
  *-------------------------------------------------------------------------
  */
-#include "ilist.h"
+#include "slab/ilist.h"
 
 #ifndef NDEBUG
 #define USED_FOR_ASSERTS_ONLY

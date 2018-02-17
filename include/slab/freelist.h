@@ -21,7 +21,8 @@ struct atomic_node
 	_Atomic(flist_node *) next;
 };
 
-static_assert(sizeof(flist_node) == sizeof(atomic_node));
+static_assert(sizeof(flist_node) == sizeof(struct atomic_node),
+			  "Atomic pointer size is not equal pointer size");
 
 #define CAST_TO_ATOMIC_NODE(node) ((struct atomic_node *) (node))
 

@@ -5,6 +5,7 @@
 # Set project source files.
 set(SRC
   "${SRC_PATH}/ilist.c"
+  "${SRC_PATH}/slab.c"
 )
 
 # Set project main file.
@@ -13,5 +14,6 @@ set(MAIN_SRC
 
 # Set project test source files.
 set(TEST_SRC
-  "${TEST_SRC_PATH}/testHeap.cpp"
+  "${TEST_SRC_PATH}/testBase.cpp"
+  "${TEST_SRC_PATH}/testSlabAlloc.cpp"
 )

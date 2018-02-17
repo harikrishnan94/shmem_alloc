@@ -113,7 +113,23 @@
 #include <assert.h>
 #include <stdbool.h>
 
+#define CppAsString(identifier)				  # identifier
+#define _Static_assert(condition, errmessage) static_assert(condition, errmessage)
+
+#define StaticAssertStmt(condition, errmessage) \
+	do { _Static_assert(condition, errmessage); } while (0)
+#define StaticAssertExpr(condition, errmessage) \
+	({ StaticAssertStmt(condition, errmessage); true; } \
+	)
+
 #define Assert(check) assert(check)
+#define AssertVariableIsOfType(varname, typename) \
+	StaticAssertStmt(__builtin_types_compatible_p(__typeof__(varname), typename), \
+					 CppAsString(varname) " does not have type " CppAsString(typename))
+#define AssertVariableIsOfTypeMacro(varname, typename) \
+	((void) StaticAssertExpr(__builtin_types_compatible_p(__typeof__(varname), typename), \
+							 CppAsString(varname) " does not have type " CppAsString(typename)))
+
 
 /*
  * Enable for extra debugging. This is rather expensive, so it's not enabled by

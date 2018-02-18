@@ -22,6 +22,7 @@ extern void slab_destroy(slab_t *slab);
 extern void	  *slab_alloc(slab_t *slab);
 extern void	  slab_free(slab_t *slab, void *ptr);
 extern size_t slab_get_size(slab_t *slab);
+extern int	  slab_get_page_size(slab_t *slab);
 
 #ifdef __cplusplus
 }

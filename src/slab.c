@@ -216,6 +216,13 @@ slab_get_size(slab_t *slab)
 }
 
 
+int
+slab_get_page_size(slab_t *slab)
+{
+	return slab->slab_info.pagesize;
+}
+
+
 static void *
 slab_alloc_from_active_page(slab_t *slab)
 {

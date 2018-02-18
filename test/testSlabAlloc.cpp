@@ -39,8 +39,8 @@ TEST_CASE("SlabAllocatorTest", "[allocator]")
 
 	unordered_set<void *> ptr_set;
 
-	constexpr int pagesize	= 64 * 1024;
-	constexpr int blocksize = 6.16 * 1024;
+	constexpr int blocksize = 1023.94 * 1024;
+	constexpr int pagesize	= blocksize * 10;
 
 	slab_t *slab = slab_create(pagesize, blocksize, slab_base_alloc, slab_base_free, NULL);
 
@@ -128,6 +128,6 @@ TEST_CASE("SlabAllocatorTest", "[allocator]")
 		slab_free(slab, ptr);
 	}
 
-	REQUIRE(slab_get_size(slab) == pagesize);
+	REQUIRE(slab_get_size(slab) == slab_get_page_size(slab));
 	slab_destroy(slab);
 }

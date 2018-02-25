@@ -6,6 +6,7 @@
 set(SRC
   "${SRC_PATH}/ilist.c"
   "${SRC_PATH}/slab.c"
+  "${SRC_PATH}/bmgr.c"
 )
 
 # Set project main file.
@@ -16,4 +17,5 @@ set(MAIN_SRC
 set(TEST_SRC
   "${TEST_SRC_PATH}/testBase.cpp"
   "${TEST_SRC_PATH}/testSlabAlloc.cpp"
+  "${TEST_SRC_PATH}/testBuddyAlloc.cpp"
 )

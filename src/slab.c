@@ -1,24 +1,9 @@
 #include "slab/slab.h"
-#include "slab/ilist.h"
+#include "utils/ilist.h"
 
 #include <assert.h>
 #include <inttypes.h>
 #include <stdbool.h>
-
-#define CACHE_LINE_SIZE 64
-#define MAXIMUM_ALIGNOF 16
-
-/*
- * The above macros will not work with types wider than uintptr_t, like with
- * uint64 on 32-bit platforms.  That's not problem for the usual use where a
- * pointer or a length is aligned, but for the odd case that you need to
- * align something (potentially) wider, use TYPEALIGN64.
- */
-#define TYPEALIGN64(ALIGNVAL, LEN) \
-	(((uint64_t) (LEN) + ((ALIGNVAL) -1)) & ~((uint64_t) ((ALIGNVAL) -1)))
-
-/* we don't currently need wider versions of the other ALIGN macros */
-#define MAXALIGN(LEN) TYPEALIGN64(MAXIMUM_ALIGNOF, (LEN))
 
 
 typedef struct

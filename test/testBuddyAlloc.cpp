@@ -34,8 +34,8 @@ TEST_CASE("BuddyManager Test", "[allocator]")
 	constexpr auto BuddyPageSize		  = 4 * 1024 * 1024;
 	constexpr auto BuddyMinAllocSize	  = 4 * 1024;
 	constexpr auto BuddyManagerAllocLimit = 28 * 1024 * 1024;
-	constexpr auto AllocLimit			  = BuddyManagerAllocLimit - BuddyPageSize - 2 * 1024 *
-											1024;
+	constexpr auto AllocLimit			  = BuddyManagerAllocLimit - BuddyPageSize -
+											2 * 1024 * 1024;
 	constexpr auto MinAllocSize = BuddyMinAllocSize;
 
 	void   *buddy_mem	  = static_cast<void *>(new char[BuddyManagerAllocLimit]);

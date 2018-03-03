@@ -117,6 +117,10 @@
 #define CACHE_LINE_SIZE 64
 #define MAXIMUM_ALIGNOF 16
 
+#ifndef NDEBUG
+#define USE_ASSERT_CHECKING
+#endif
+
 /*
  * The above macros will not work with types wider than uintptr_t, like with
  * uint64 on 32-bit platforms.  That's not problem for the usual use where a

@@ -24,43 +24,46 @@ typedef void *control_block_t;
 
 #define BITS_PER_BYTE	 8
 #define BYTES_PER_QWORD	 8
-#define MAX_SIZE_CLASSES (sizeof(size_t) * BYTES_PER_QWORD)
+#define MAX_SIZE_CLASSES (BYTES_PER_QWORD * BITS_PER_BYTE)
 
 #define PTR_TO_NODE(ptr)  ((dlist_node *) ptr)
 #define NODE_TO_PTR(node) ((void *) node)
 
 #define Min(a, b) ((uintptr_t) (a) < (uintptr_t) (b) ? (a) : (b))
 
+/* Core struct that contains information about buddy manager */
 struct bmgr_t
 {
+	/* Description of user provided memory region */
 	void   *memory_region;
 	size_t total_memory_managed;
 
+	/* Start of buddy control blocks */
 	control_block_t control_block;
 	size_t			control_block_size;
 
 	size_t min_alloc_size;
 	size_t max_alloc_size;
-	int	   num_size_classes;
+	int	   log2_min_alloc_size;
+	int	   log2_max_alloc_size;
 
-	int log2_min_alloc_size;
-	int log2_max_alloc_size;
+	void	   *chunk_start;      /* start of allocatable memory region */
+	size_t	   num_usable_chunks; /* max chunks that can be allocated */
+	size_t	   num_chunks_used;   /* # of chunks that are currently allocated */
+	size_t	   next_chunk_index;  /* Index of next free chunk in memory region */
+	dlist_head free_chunks;       /* Freelist chunks */
 
-	void	   *chunk_start;
-	size_t	   num_usable_chunks;
-	size_t	   num_chunks_used;
-	dlist_head chunk_free_lists[MAX_SIZE_CLASSES];
-
-	size_t	   next_chunk_index;
-	dlist_head free_chunks;
+	int		   num_size_classes;                   /* Max size classes */
+	dlist_head chunk_free_lists[MAX_SIZE_CLASSES]; /* Freelist of blocks per size class */
 };
 
+/* Information needed to manipulate buddy control block for a given pointer */
 typedef struct
 {
-	size_t chunk_id;
-	size_t chunk_offset;
-	bmgr_t *bmgr;
-	int	   szc;
+	size_t chunk_id;     /* Id of chunk containing the pointer */
+	size_t chunk_offset; /* Offset of pointer within the chunk */
+	bmgr_t *bmgr;        /* Buddy manger containing the pointer */
+	int	   szc;          /* sizeclass of this pointer */
 } buddy_ptr_t;
 
 static int	  log_2(size_t n);
@@ -80,7 +83,7 @@ static void		   *get_real_ptr(bmgr_t *bmgr, buddy_ptr_t bptr);
 static int	  get_size_class(bmgr_t *bmgr, size_t size);
 static size_t get_size(bmgr_t *bmgr, int szc);
 
-static control_block_t get_control_block(bmgr_t *bmgr, buddy_ptr_t bptr);
+static control_block_t get_control_block(buddy_ptr_t bptr);
 static size_t		   get_bitmap_index(buddy_ptr_t bptr);
 static void			   mark_as_in_use(control_block_t control_block, buddy_ptr_t bptr);
 static void			   mark_as_free(control_block_t control_block, buddy_ptr_t bptr);
@@ -96,10 +99,17 @@ bmgr_create(size_t min_alloc_size, size_t max_alloc_size, void *memory_region, s
 	bmgr_t	  *bmgr = memory_region;
 	size_t	  max_usable_chunks;
 	ptrdiff_t usable_mem_size;
+	size_t	  mem_used;
 
 	assert(bmgr != NULL);
 
 	max_usable_chunks = mem_size / max_alloc_size;
+	mem_used		  = sizeof(bmgr_t);
+
+	if (mem_size <= mem_used)
+	{
+		return NULL;
+	}
 
 	bmgr->memory_region		   = memory_region;
 	bmgr->total_memory_managed = mem_size;
@@ -108,17 +118,19 @@ bmgr_create(size_t min_alloc_size, size_t max_alloc_size, void *memory_region, s
 	bmgr->log2_min_alloc_size  = log_2(min_alloc_size);
 	bmgr->log2_max_alloc_size  = log_2(max_alloc_size);
 	bmgr->num_chunks_used	   = 0;
+	bmgr->next_chunk_index	   = 0;
 	bmgr->num_size_classes	   = get_num_size_classes(min_alloc_size, max_alloc_size);
 	bmgr->control_block_size   = get_control_block_size(min_alloc_size, max_alloc_size);
-	bmgr->control_block		   = (control_block_t) MAXALIGN((char *) memory_region +
-															sizeof(bmgr_t));
+	bmgr->control_block		   = (control_block_t) ((char *) memory_region + sizeof(bmgr_t));
+	mem_used				  += bmgr->control_block_size * max_usable_chunks;
 
-	if (bmgr->control_block_size == 0)
+	if (bmgr->control_block_size == 0 || mem_size <= mem_used)
 	{
 		return NULL;
 	}
 
-	bmgr->chunk_start = (void *) TYPEALIGN64(max_alloc_size, (char *) memory_region +
+	/* Align chunk_start to max_alloc_size, so that start of chunk is efficiently computed via bit manipulations */
+	bmgr->chunk_start = (void *) TYPEALIGN64(max_alloc_size, (char *) bmgr->control_block +
 											 max_usable_chunks * bmgr->control_block_size);
 
 	for (int i = 0; i < bmgr->num_size_classes; i++)
@@ -126,6 +138,7 @@ bmgr_create(size_t min_alloc_size, size_t max_alloc_size, void *memory_region, s
 		dlist_init(&bmgr->chunk_free_lists[i]);
 	}
 
+	/* Size of alloca'ble memory region */
 	usable_mem_size = ((char *) memory_region + mem_size) - (char *) bmgr->chunk_start;
 
 	if (usable_mem_size > 0)
@@ -133,12 +146,22 @@ bmgr_create(size_t min_alloc_size, size_t max_alloc_size, void *memory_region, s
 		bmgr->num_usable_chunks = usable_mem_size / max_alloc_size;
 	}
 
+	memset(bmgr->control_block, 0, bmgr->num_usable_chunks * bmgr->control_block_size);
+
 	dlist_init(&bmgr->free_chunks);
 
 	return bmgr;
 }
 
 
+size_t
+buddy_total_alloc_memory(bmgr_t *bmgr)
+{
+	return bmgr->num_usable_chunks * bmgr->max_alloc_size;
+}
+
+
+/* Allocate memory region of size 'size' */
 void *
 buddy_alloc(bmgr_t *bmgr, size_t size)
 {
@@ -151,6 +174,7 @@ buddy_alloc(bmgr_t *bmgr, size_t size)
 }
 
 
+/* Free memory region pointed by ptr of size 'size' */
 void
 buddy_free(bmgr_t *bmgr, void *ptr, size_t size)
 {
@@ -171,6 +195,16 @@ buddy_free(bmgr_t *bmgr, void *ptr, size_t size)
 }
 
 
+/*
+ * Core buddy alloc algorithm:
+ *  If there is a free block available for the target size class
+ *      Retun the block.
+ *  Else If the target size class is not maximum size class,
+ *      Allocate a block from next size class and split that into two and
+ *      return one block and move it's buddy to current sizeclass's freelist.
+ * Else (For max size class)
+ *      Allocate a full chunk and return it.
+ */
 static void *
 buddy_alloc_internal(bmgr_t *bmgr, int szc)
 {
@@ -199,11 +233,24 @@ buddy_alloc_internal(bmgr_t *bmgr, int szc)
 	{
 		adjust_control_block(bmgr, ptr, szc, split);
 	}
+	else
+	{
+		ptr = ptr;
+	}
 
 	return ptr;
 }
 
 
+/*
+ * Core buddy free algorithm:
+ *	If size class is maximum size class, then
+ *		Free the entire chunk (block)
+ *  Else If the buddy of current free block is also free, then
+ *      Merge two blocks and free the merged block.
+ *	Else
+ *		Push the block into freelist of current sizeclass
+ */
 static void
 buddy_free_internal(bmgr_t *bmgr, void *ptr, int szc)
 {
@@ -211,7 +258,7 @@ buddy_free_internal(bmgr_t *bmgr, void *ptr, int szc)
 	assert(ptr != NULL);
 
 	buddy_ptr_t		bptr		  = get_buddy_ptr(bmgr, ptr, szc);
-	control_block_t control_block = get_control_block(bmgr, bptr);
+	control_block_t control_block = get_control_block(bptr);
 
 	assert(!both_free(control_block, bptr));
 
@@ -219,12 +266,14 @@ buddy_free_internal(bmgr_t *bmgr, void *ptr, int szc)
 
 	if (szc != bmgr->num_size_classes - 1)
 	{
-		if (both_free(control_block, bptr))
-		{
-			void *buddy_ptr = get_real_ptr(bmgr, get_buddy(control_block, bptr));
+		buddy_ptr_t buddy_bptr = get_buddy(control_block, bptr);
 
-			dlist_delete(PTR_TO_NODE(buddy_ptr));
-			buddy_free_internal(bmgr, Min(ptr, buddy_ptr), szc + 1);
+		if (block_is_free(control_block, buddy_bptr))
+		{
+			void *buddy = get_real_ptr(bmgr, buddy_bptr);
+
+			dlist_delete(PTR_TO_NODE(buddy));
+			buddy_free_internal(bmgr, Min(ptr, buddy), szc + 1);
 		}
 		else
 		{
@@ -238,14 +287,18 @@ buddy_free_internal(bmgr_t *bmgr, void *ptr, int szc)
 }
 
 
+/*
+ * Adjust control block for the given pointer.
+ */
 static void
 adjust_control_block(bmgr_t *bmgr, void *ptr, int szc, bool split)
 {
 	buddy_ptr_t		bptr		  = get_buddy_ptr(bmgr, ptr, szc);
-	control_block_t control_block = get_control_block(bmgr, bptr);
+	control_block_t control_block = get_control_block(bptr);
 
 	mark_as_in_use(control_block, bptr);
 
+	/* If the block needs to be split, then push it's buddy into freelist */
 	if (split)
 	{
 		buddy_ptr_t buddy_bptr = get_buddy(control_block, bptr);
@@ -269,6 +322,7 @@ get_num_size_classes(size_t min_alloc_size, size_t max_alloc_size)
 	int log2_min = log_2(min_alloc_size);
 	int log2_max = log_2(max_alloc_size);
 
+	/* Check if max_alloc_size and min_alloc_size are power of two */
 	if (((1 << log2_max) != max_alloc_size) || ((1 << log2_min) != min_alloc_size))
 	{
 		return 0;
@@ -285,11 +339,13 @@ get_control_block_size(size_t min_alloc_size, size_t max_alloc_size)
 }
 
 
+/* Allocate a chunk from managed memory region */
 static void *
 chunk_alloc(bmgr_t *bmgr)
 {
 	void *chunk = NULL;
 
+	/* check if there is free chunk available */
 	if (!dlist_is_empty(&bmgr->free_chunks))
 	{
 		bmgr->num_chunks_used++;
@@ -297,16 +353,27 @@ chunk_alloc(bmgr_t *bmgr)
 	}
 	else if (bmgr->next_chunk_index < bmgr->num_usable_chunks)
 	{
+		/* Allocate next chunk, from the memory region, If all chunks are not in use */
 		chunk = (char *) bmgr->chunk_start + bmgr->next_chunk_index * bmgr->max_alloc_size;
 
 		bmgr->next_chunk_index++;
 		bmgr->num_chunks_used++;
 	}
 
+#ifdef USE_ASSERT_CHECKING
+
 	if (chunk)
 	{
-		memset(chunk, 0, bmgr->control_block_size);
+		buddy_ptr_t		bptr		  = get_buddy_ptr(bmgr, chunk, bmgr->num_size_classes - 1);
+		control_block_t control_block = get_control_block(bptr);
+
+		for (size_t i = 0; i < bmgr->control_block_size; i++)
+		{
+			assert(((uint8_t *) control_block)[i] == 0);
+		}
 	}
+
+#endif /* USE_ASSERT_CHECKING */
 
 	return chunk;
 }
@@ -364,8 +431,10 @@ get_size(bmgr_t *bmgr, int szc)
 
 
 static control_block_t
-get_control_block(bmgr_t *bmgr, buddy_ptr_t bptr)
+get_control_block(buddy_ptr_t bptr)
 {
+	bmgr_t *bmgr = bptr.bmgr;
+
 	return (control_block_t) ((char *) bmgr->control_block + bptr.chunk_id *
 							  bmgr->control_block_size);
 }

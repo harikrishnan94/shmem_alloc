@@ -70,7 +70,7 @@ TEST_CASE("SlabAllocatorTest", "[allocator]")
 					  return uniform_dist(rand_op);
 				  };
 
-	int testIterations = 1024 * 1024;
+	int testIterations = 100 * 1024;
 
 	for (int i = 0; i < testIterations; i++)
 	{

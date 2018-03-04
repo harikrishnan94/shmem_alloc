@@ -233,10 +233,6 @@ buddy_alloc_internal(bmgr_t *bmgr, int szc)
 	{
 		adjust_control_block(bmgr, ptr, szc, split);
 	}
-	else
-	{
-		ptr = ptr;
-	}
 
 	return ptr;
 }
